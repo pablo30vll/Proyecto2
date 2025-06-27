@@ -26,7 +26,9 @@ Este documento describe el pipeline MLOps completo para el sistema de predicció
 │   ├── models/          # Modelos entrenados
 │   └── shap/            # Análisis de interpretabilidad
 ├── tmp/                 # Archivos temporales
-└── mlruns/              # Logs de MLflow
+├── mlruns/             # Logs de MLflow
+└──dags/                # Donde estarán los dags
+   └── scripts/		# Donde estarán los scripts de ejecución
 ```
 
 ## Descripción Detallada de Tareas
