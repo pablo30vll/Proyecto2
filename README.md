@@ -222,14 +222,6 @@ graph TD
 
 ![1751058511325](image/README/1751058511325.png)
 
-### Estados del DAG
-
-* 🟢  **Verde** : Tarea completada exitosamente
-* 🟡  **Amarillo** : Tarea en ejecución
-* 🔴  **Rojo** : Tarea fallida
-* ⚪  **Gris** : Tarea no ejecutada (skipped)
-* 🔵  **Azul** : Tarea programada
-
 ## Lógica de Integración de Datos Futuros y Detección de Drift
 
 ### 1. **Flujo Semanal Automatizado**
