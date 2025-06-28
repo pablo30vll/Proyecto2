@@ -148,202 +148,61 @@ def predict_single_purchase(
         return f"❌ Error inesperado: {str(e)}"
 
 def predict_bulk_from_file(file):
-    """Predicción masiva desde archivo CSV"""
-    
     if file is None:
         return "❌ Por favor, sube un archivo CSV con las 10 features del modelo"
-    
     if not check_api_health():
         return "❌ Error: No se puede conectar con la API"
-    
     try:
         # Leer archivo CSV
         df = pd.read_csv(file.name)
-        
-        # Validar columnas requeridas (solo las features del modelo)
         required_cols = [
             'customer_type', 'Y', 'X', 'num_deliver_per_week',
             'brand', 'sub_category', 'segment', 'package', 'size', 'week_num'
         ]
-        
         missing_cols = [col for col in required_cols if col not in df.columns]
         if missing_cols:
             return f"❌ Faltan columnas requeridas: {missing_cols}\n\n💡 El CSV debe tener exactamente estas 10 columnas:\n{', '.join(required_cols)}"
-        
-        # Verificar que no hay columnas extra
-        extra_cols = [col for col in df.columns if col not in required_cols]
-        if extra_cols:
-            return f"⚠️ Columnas adicionales detectadas (serán ignoradas): {extra_cols}\n\n✅ Procesando solo las 10 features del modelo..."
-        
-        # Preparar datos para la API (máximo 20 filas para demo)
         df_sample = df.head(20)
-        total_rows = len(df)
-        
-        # Preparar datos para la API en el formato correcto (customer/product separados)
-        predictions_data = []
-        
-        for _, row in df_sample.iterrows():
-            data = {
-                "customer": {
-                    "customer_type": str(row['customer_type']),
-                    "Y": float(row['Y']),
-                    "X": float(row['X']),
-                    "num_deliver_per_week": int(row['num_deliver_per_week'])
-                },
-                "product": {
-                    "brand": str(row['brand']),
-                    "sub_category": str(row['sub_category']),
-                    "segment": str(row['segment']),
-                    "package": str(row['package']),
-                    "size": float(row['size'])
-                },
-                "week_num": int(row['week_num'])
-            }
-            predictions_data.append(data)
-        
-        # Hacer peticiones individuales
-        results = []
-        successful_predictions = 0
-        
-        for i, data in enumerate(predictions_data):
-            try:
-                response = requests.post(
-                    f"{API_BASE_URL}/predict",
-                    json=data,
-                    timeout=10
-                )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    result['row_index'] = i
-                    result['customer_type'] = data['customer']['customer_type']
-                    result['brand'] = data['product']['brand'] 
-                    result['size'] = data['product']['size']
-                    results.append(result)
-                    successful_predictions += 1
-                else:
-                    results.append({
-                        'row_index': i,
-                        'prediction': False,
-                        'probability': 0.0,
-                        'error': f"Error API en fila {i+1}"
-                    })
-            except Exception as e:
-                results.append({
-                    'row_index': i,
-                    'prediction': False,
-                    'probability': 0.0,
-                    'error': f"Error en fila {i+1}: {str(e)}"
-                })
-        
-        # Procesar resultados
-        positive_preds = [r for r in results if r.get('prediction', False)]
-        total_processed = len(results)
-        positive_count = len(positive_preds)
-        percentage = (positive_count / total_processed * 100) if total_processed > 0 else 0
-        
-        # Calcular estadísticas
-        if positive_preds:
-            avg_prob = sum(r.get('probability', 0) for r in positive_preds) / len(positive_preds)
-            max_prob = max(r.get('probability', 0) for r in positive_preds)
-        else:
-            avg_prob = 0
-            max_prob = 0
-        
-        # Resultado resumido
-        summary = f"""
-# 📈 **RESULTADOS DE PREDICCIÓN MASIVA**
 
-## 📊 **Resumen Ejecutivo**
-- **Total de filas en archivo:** {total_rows:,}
-- **Filas procesadas:** {total_processed} (máximo 20 para demo)
-- **Predicciones exitosas:** {successful_predictions}
-- **Predicciones positivas:** {positive_count}
-- **Tasa de conversión esperada:** {percentage:.1f}%
-
-## 🎯 **Métricas de Confianza**
-- **Probabilidad promedio (positivas):** {avg_prob:.1%}
-- **Probabilidad máxima:** {max_prob:.1%}
-- **Confianza del modelo:** {'Alta' if avg_prob > 0.7 else 'Media' if avg_prob > 0.5 else 'Baja'}
-
----
-
-## 🏆 **TOP 5 OPORTUNIDADES DE VENTA**
-"""
-        
-        # Obtener top predicciones
-        positive_preds.sort(key=lambda x: x.get('probability', 0), reverse=True)
-        
-        for i, pred in enumerate(positive_preds[:5]):
-            row_idx = pred.get('row_index', 0)
-            prob = pred.get('probability', 0)
-            customer_type = pred.get('customer_type', 'N/A')
-            brand = pred.get('brand', 'N/A')
-            size = pred.get('size', 0)
+        # Formato correcto: {"data": [ {...}, {...}, ... ]}
+        json_data = {"data": df_sample.to_dict(orient="records")}
+        response = requests.post(
+            f"{API_BASE_URL}/predict/bulk",
+            json=json_data,
+            timeout=20
+        )
+        if response.status_code == 200:
+            results = response.json()
+            predictions = results.get("predictions", [])
+            positive_preds = [p for p in predictions if p.get("prediction", False)]
             
-            priority = "🔥 ALTA" if prob > 0.8 else "🟡 MEDIA" if prob > 0.6 else "🟢 NORMAL"
-            
-            summary += f"""
-**#{i+1} - Fila {row_idx + 1}** | Probabilidad: **{prob:.1%}** | Prioridad: {priority}
-- Cliente: {customer_type} | Producto: {brand} ({size}L)
-"""
-        
-        if len(positive_preds) > 5:
-            summary += f"\n... y **{len(positive_preds) - 5} oportunidades adicionales**"
-        
-        # Análisis por segmentos
-        if positive_preds:
-            summary += f"\n\n## 📈 **ANÁLISIS POR SEGMENTOS**\n"
-            
-            # Por tipo de cliente
-            customer_analysis = {}
-            for pred in positive_preds:
-                customer_type = pred.get('customer_type', 'N/A')
-                if customer_type not in customer_analysis:
-                    customer_analysis[customer_type] = []
-                customer_analysis[customer_type].append(pred.get('probability', 0))
-            
-            summary += "**Por tipo de cliente:**\n"
-            for customer_type, probs in customer_analysis.items():
-                avg_prob = sum(probs) / len(probs)
-                summary += f"- {customer_type}: {len(probs)} oportunidades (avg: {avg_prob:.1%})\n"
-        
-        # Mostrar errores si los hay
-        errors = [r for r in results if 'error' in r]
-        if errors:
-            summary += f"\n\n⚠️ **ERRORES ENCONTRADOS:** {len(errors)}\n"
-            for error in errors[:3]:  # Mostrar solo los primeros 3
-                summary += f"- {error['error']}\n"
-            if len(errors) > 3:
-                summary += f"- ... y {len(errors) - 3} errores más\n"
-        
-        # Recomendaciones de acción
-        summary += f"""
+            summary = f"""
+        # 📈 **RESULTADOS DE PREDICCIÓN MASIVA**
+        - **Total de filas:** {len(df_sample)}
+        - **Predicciones positivas:** {len(positive_preds)}
+        - **Probabilidad máxima:** {max([p['probability'] for p in positive_preds], default=0):.1%}
 
----
-
-## 🚀 **RECOMENDACIONES DE ACCIÓN**
-
-### Inmediatas (Esta semana):
-- Contactar los **{min(3, positive_count)} clientes** con mayor probabilidad
-- Verificar inventario para marcas con alta demanda predicha
-- Preparar ofertas especiales para segmentos prioritarios
-
-### Corto plazo (Próximas 2 semanas):
-- Ejecutar campaña dirigida a los **{positive_count} clientes** con predicción positiva
-- Analizar patrones de los clientes con baja probabilidad
-- Optimizar rutas de entrega basadas en predicciones geográficas
-
-### Estratégico:
-- Usar este modelo semanalmente para planificación de ventas
-- Incrementar frecuencia de análisis en semanas de alta actividad
-- Integrar predicciones con sistema CRM para seguimiento automático
+        ## 🟢 **Solo Predicciones Positivas (probabilidad > 50%)**
         """
-        
-        return summary
-        
+
+            if positive_preds:
+                # Ordena por probabilidad descendente
+                positive_preds.sort(key=lambda x: x.get("probability", 0), reverse=True)
+                for i, pred in enumerate(positive_preds):
+                    prob = pred["probability"]
+                    week = pred.get("week", "")
+                    # Si tu backend devuelve más campos, agrégalos aquí:
+                    summary += (
+                        f"- Fila {i+1:2d} | Prob: {prob:.1%} | Semana: {week}\n"
+                    )
+            else:
+                summary += "\nNinguna fila con probabilidad > 50%.\n"
+            return summary
+        else:
+            error_detail = response.json().get('detail', 'Error desconocido')
+            return f"❌ Error en la predicción masiva: {error_detail}"
     except Exception as e:
-        return f"❌ Error procesando archivo: {str(e)}\n\n💡 Verifica que el archivo CSV tenga las 10 columnas correctas y esté bien formateado."
+        return f"❌ Error procesando archivo: {str(e)}"
 
 def create_sample_csv():
     """Crea un archivo CSV de ejemplo con datos reales del dataset SodAI"""
