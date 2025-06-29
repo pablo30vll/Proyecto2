@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sodai-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models  # Montar directorio de modelos
+      - ./airflow/dags/scripts:/app/scripts  # Montar scripts del pipeline
+    environment:
+      - PYTHONPATH=/app:/app/scripts
+    networks:
+      - sodai-network
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: sodai-frontend
+    ports:
+      - "7860:7860"
+    environment:
+      - API_BASE_URL=http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - sodai-network
+    restart: unless-stopped
+
+networks:
+  sodai-network:
+    driver: bridge

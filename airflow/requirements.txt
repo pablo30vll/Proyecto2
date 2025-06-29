@@ -1,0 +1,10 @@
+apache-airflow
+scikit-learn
+optuna
+mlflow
+pandas
+numpy
+joblib
+shap
+matplotlib
+pyarrow
